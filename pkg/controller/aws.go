@@ -35,6 +35,7 @@ import (
 	"github.com/crossplane/provider-aws/pkg/controller/network/securitygroup"
 	"github.com/crossplane/provider-aws/pkg/controller/network/subnet"
 	"github.com/crossplane/provider-aws/pkg/controller/network/vpc"
+	"github.com/crossplane/provider-aws/pkg/controller/network/zone"
 	"github.com/crossplane/provider-aws/pkg/controller/s3"
 )
 
@@ -74,6 +75,7 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 		routetable.SetupRouteTable,
 		dbsubnetgroup.SetupDBSubnetGroup,
 		dynamodb.SetupDynamoTable,
+		zone.SetupZone,
 	} {
 		if err := setup(mgr, l); err != nil {
 			return err
