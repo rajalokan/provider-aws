@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/route53"
-	"github.com/crossplane/provider-aws/apis/network/v1alpha3"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/crossplane/provider-aws/apis/network/v1alpha3"
 )
 
 func TestCreatePatch(t *testing.T) {

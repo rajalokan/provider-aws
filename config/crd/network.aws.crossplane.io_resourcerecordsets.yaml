@@ -9,8 +9,11 @@ metadata:
   name: resourcerecordsets.network.aws.crossplane.io
 spec:
   additionalPrinterColumns:
-  - JSONPath: .status.atProvider.arn
-    name: ARN
+  - JSONPath: .status.forProvider.name
+    name: NAME
+    type: string
+  - JSONPath: .status.atProvider.Type
+    name: TYPE
     type: string
   - JSONPath: .status.conditions[?(@.type=='Ready')].status
     name: READY

@@ -2,7 +2,6 @@ package resourcerecordset
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
@@ -25,8 +24,10 @@ import (
 
 const (
 	errUnexpectedObject = "The managed resource is not an ResourceRecordSet resource"
-	errChange           = "failed to change the ResourceRecordSet resource"
 	errList             = "failed to list the ResourceRecordSet resource"
+	errCreate           = "failed to create the ResourceRecordSet resource"
+	errUpdate           = "failed to update the ResourceRecordSet resource"
+	errDelete           = "failed to delete the ResourceRecordSet resource"
 )
 
 // SetupResourceRecordSet adds a controller that reconciles ResourceRecordSets.
@@ -74,7 +75,7 @@ type external struct {
 
 func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mgd.(*v1alpha3.ResourceRecordSet)
-	fmt.Printf("\n\nIn Observe...\n\n")
+
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errUnexpectedObject)
 	}
@@ -85,7 +86,6 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 	}
 	if err != nil {
 		// Either there is err and retry. Or Resource does not exist.
-		// fmt.Println("ResourceRecordSet Does not Exists")
 		return managed.ExternalObservation{
 			ResourceExists:    false,
 			ConnectionDetails: managed.ConnectionDetails{},
@@ -107,9 +107,6 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 }
 
 func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.ExternalCreation, error) {
-
-	fmt.Printf("\n\nIn Create...\n\n")
-
 	cr, ok := mgd.(*v1alpha3.ResourceRecordSet)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errUnexpectedObject)
@@ -121,16 +118,14 @@ func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.Ex
 	_, err := e.client.ChangeResourceRecordSetsRequest(input).Send(ctx)
 
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, errChange)
+		return managed.ExternalCreation{}, errors.Wrap(err, errCreate)
 	}
 	cr.Status.SetConditions(runtimev1alpha1.Creating())
 
-	return managed.ExternalCreation{}, errors.Wrap(nil, errChange)
+	return managed.ExternalCreation{}, errors.Wrap(nil, errCreate)
 }
 
 func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.ExternalUpdate, error) {
-	fmt.Printf("\n\nIn Update...\n\n")
-
 	cr, ok := mgd.(*v1alpha3.ResourceRecordSet)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errUnexpectedObject)
@@ -139,14 +134,13 @@ func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.Ex
 	_, err := e.client.ChangeResourceRecordSetsRequest(input).Send(ctx)
 
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, errChange)
+		return managed.ExternalUpdate{}, errors.Wrap(err, errUpdate)
 	}
 
-	return managed.ExternalUpdate{}, errors.Wrap(nil, errChange)
+	return managed.ExternalUpdate{}, errors.Wrap(nil, errUpdate)
 }
 
 func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
-	fmt.Printf("\n\nIn Delete...\n\n")
 	cr, ok := mgd.(*v1alpha3.ResourceRecordSet)
 	if !ok {
 		return errors.New(errUnexpectedObject)
@@ -155,7 +149,10 @@ func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
 	cr.Status.SetConditions(runtimev1alpha1.Deleting())
 
 	input := resourcerecordset.GenerateChangeResourceRecordSetsInput(&cr.Spec.ForProvider, route53.ChangeActionDelete)
-	e.client.ChangeResourceRecordSetsRequest(input).Send(ctx)
+	//TODO: Create an ErrorIs function to check the error returned
+	//Currently we aren't checking the error returned
+	//This is just to satisfy the linter
+	_, _ = e.client.ChangeResourceRecordSetsRequest(input).Send(ctx)
 
-	return errors.Wrap(nil, errChange)
+	return errors.Wrap(nil, errDelete)
 }

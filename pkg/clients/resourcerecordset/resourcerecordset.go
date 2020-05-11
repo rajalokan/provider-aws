@@ -8,10 +8,9 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
-	"github.com/aws/aws-sdk-go-v2/service/route53/route53iface"
-	"github.com/crossplane/provider-aws/apis/network/v1alpha3"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/crossplane/provider-aws/apis/network/v1alpha3"
 	awsclients "github.com/crossplane/provider-aws/pkg/clients"
 )
 
@@ -26,15 +25,11 @@ type Client interface {
 	ListResourceRecordSetsRequest(input *route53.ListResourceRecordSetsInput) route53.ListResourceRecordSetsRequest
 }
 
-type resourceRecordSetClient struct {
-	resourceRecordSet route53iface.ClientAPI
-}
-
 // NotFound will be raised when there is no ResourceRecordSet
 type NotFound struct{}
 
 func (err *NotFound) Error() string {
-	return fmt.Sprintf(RRSetNotFound)
+	return fmt.Sprint(RRSetNotFound)
 }
 
 // NewClient creates new AWS client with provided AWS Configuration/Credentials
@@ -54,8 +49,9 @@ func GenerateChangeResourceRecordSetsInput(p *v1alpha3.ResourceRecordSetParamete
 
 	resourceRecords := make([]route53.ResourceRecord, 0)
 	for _, r := range p.Records {
+		record := r
 		resourceRecords = append(resourceRecords, route53.ResourceRecord{
-			Value: &r,
+			Value: &record,
 		})
 	}
 
@@ -81,7 +77,7 @@ func GenerateChangeResourceRecordSetsInput(p *v1alpha3.ResourceRecordSetParamete
 
 // GenerateObservation is used to produce v1alpha3.ResourceRecordSetObservation from
 // route53.ResourceRecordSet
-func GenerateObservation(r route53.ResourceRecordSet) v1alpha3.ResourceRecordSetObservation { // nolint:gocyclo
+func GenerateObservation(r route53.ResourceRecordSet) v1alpha3.ResourceRecordSetObservation {
 
 	rType := string(r.Type)
 	resourceRecords := make([]*v1alpha3.ResourceRecord, 0)
@@ -110,7 +106,7 @@ func IsUpToDate(p v1alpha3.ResourceRecordSetParameters, rrset route53.ResourceRe
 
 // LateInitialize fills the empty fields in *v1alpha3.ResourceRecordSetParameters with
 // the values seen in route53.ResourceRecordSet.
-func LateInitialize(in *v1alpha3.ResourceRecordSetParameters, rrSet *route53.ResourceRecordSet) { // nolint:gocyclo
+func LateInitialize(in *v1alpha3.ResourceRecordSetParameters, rrSet *route53.ResourceRecordSet) {
 	if rrSet == nil {
 		return
 	}
@@ -132,7 +128,8 @@ func LateInitialize(in *v1alpha3.ResourceRecordSetParameters, rrSet *route53.Res
 // CreatePatch creates a *v1beta1.ResourceRecordSetParameters that has only the changed
 // values between the target *v1beta1.ResourceRecordSetParameters and the current
 // *route53.ResourceRecordSet
-func CreatePatch(in *route53.ResourceRecordSet, target *v1alpha3.ResourceRecordSetParameters) (*v1alpha3.ResourceRecordSetParameters, error) {
+func CreatePatch(in *route53.ResourceRecordSet,
+	target *v1alpha3.ResourceRecordSetParameters) (*v1alpha3.ResourceRecordSetParameters, error) {
 	currentParams := &v1alpha3.ResourceRecordSetParameters{}
 	LateInitialize(currentParams, in)
 
@@ -150,7 +147,8 @@ func CreatePatch(in *route53.ResourceRecordSet, target *v1alpha3.ResourceRecordS
 }
 
 // GetResourceRecordSetOrErr returns recordSet if present or err
-func GetResourceRecordSetOrErr(ctx context.Context, c Client, p v1alpha3.ResourceRecordSetParameters) (route53.ResourceRecordSet, error) {
+func GetResourceRecordSetOrErr(ctx context.Context,
+	c Client, p v1alpha3.ResourceRecordSetParameters) (route53.ResourceRecordSet, error) {
 	req := c.ListResourceRecordSetsRequest(&route53.ListResourceRecordSetsInput{
 		HostedZoneId: p.ZoneID,
 	})

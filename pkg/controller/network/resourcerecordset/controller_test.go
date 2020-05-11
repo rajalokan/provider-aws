@@ -116,15 +116,6 @@ func Test_Observe(t *testing.T) {
 		expectedResourceExist     bool
 		expectedResourceAvailable bool
 	}{
-		// {
-		// 	"valid input when external resource matches",
-		// 	&mockManagedRRPresent,
-		// 	[]route53.ResourceRecordSet{*mockExternal},
-		// 	nil,
-		// 	true,
-		// 	true,
-		// 	false,
-		// },
 		{
 			"upexpected managed resource should return error",
 			unexpectedItem,
@@ -192,9 +183,6 @@ func Test_Create(t *testing.T) {
 	mockManaged := v1alpha3.ResourceRecordSet{}
 	meta.SetExternalName(&mockManaged, name)
 
-	// mockExternal := &route53.ResourceRecordSet{}
-
-	// var externalObj *route53.ResourceRecordSet
 	var mockClientErr error
 	var itemsList []route53.ResourceRecordSet
 
@@ -255,7 +243,6 @@ func Test_Create(t *testing.T) {
 			g.Expect(mgd.Status.Conditions[0].Type).To(gomega.Equal(corev1alpha1.TypeReady), tc.description)
 			g.Expect(mgd.Status.Conditions[0].Status).To(gomega.Equal(corev1.ConditionFalse), tc.description)
 			g.Expect(mgd.Status.Conditions[0].Reason).To(gomega.Equal(corev1alpha1.ReasonCreating), tc.description)
-			// g.Expect(meta.GetExternalName(mgd)).To(gomega.Equal(aws.StringValue(mockExternal.SubnetId)), tc.description)
 		}
 	}
 }
@@ -320,7 +307,6 @@ func Test_Delete(t *testing.T) {
 	meta.SetExternalName(&mockManaged, name)
 
 	var mockClientErr error
-	// var itemsList []route53.ResourceRecordSet
 
 	mockClient.MockChangeResourceRecordSetsRequest = func(input *route53.ChangeResourceRecordSetsInput) route53.ChangeResourceRecordSetsRequest {
 		return route53.ChangeResourceRecordSetsRequest{
