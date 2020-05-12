@@ -175,3 +175,24 @@ func IsRRSetNotFoundErr(err error) bool {
 	}
 	return false
 }
+
+// StringValueFromRRType returns the string value of aws ResourceRecordType
+// passed in or "" if nil
+func StringValueFromRRType(rrType route53.RRType) string {
+	return string(rrType)
+}
+
+// UpdateAtProvider updates value at given provider from given ResourceRecordSet
+// This will be called from create flow as we can't use ChangeResourceRecordSetOutput
+func UpdateAtProvider(ap *v1alpha3.ResourceRecordSetObservation, r route53.ResourceRecordSet) {
+	ap.Name = r.Name
+	ap.Type = aws.String(StringValueFromRRType(r.Type))
+	ap.TTL = r.TTL
+
+	resourceRecords := make([]*v1alpha3.ResourceRecord, 0)
+	for _, item := range r.ResourceRecords {
+		rr := v1alpha3.ResourceRecord{Value: item.Value}
+		resourceRecords = append(resourceRecords, &rr)
+	}
+	ap.ResourceRecords = resourceRecords
+}

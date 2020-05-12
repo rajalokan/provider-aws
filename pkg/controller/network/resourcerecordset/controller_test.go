@@ -339,14 +339,14 @@ func Test_Delete(t *testing.T) {
 		{
 			"if the resource doesn't exist deleting resource should not return an error",
 			mockManaged.DeepCopy(),
-			errors.New("Resource doesn't exist"),
+			nil, // ChangeResourceRecordSetOutput return nil when record doesn't exist
 			true,
 		},
 		{
 			"if deleting resource fails, it should return error",
 			mockManaged.DeepCopy(),
 			errors.New("some error"),
-			true, //TODO:
+			false,
 		},
 	} {
 		mockClientErr = tc.clientErr

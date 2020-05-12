@@ -94,6 +94,8 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 
 	cr.Status.AtProvider = resourcerecordset.GenerateObservation(rrset)
 
+	cr.Status.SetConditions(runtimev1alpha1.Available())
+
 	upToDate, err := resourcerecordset.IsUpToDate(cr.Spec.ForProvider, rrset)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, "asdf")
@@ -120,7 +122,11 @@ func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.Ex
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errCreate)
 	}
-	cr.Status.SetConditions(runtimev1alpha1.Creating())
+
+	// One time set of up AtProvider manually.
+	// Because AWS ChangeResourceRecordSetOutput doesn't provide enough params, we are forced
+	// to use input as source of truth.
+	resourcerecordset.UpdateAtProvider(&cr.Status.AtProvider, *input.ChangeBatch.Changes[0].ResourceRecordSet)
 
 	return managed.ExternalCreation{}, errors.Wrap(nil, errCreate)
 }
@@ -149,10 +155,17 @@ func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
 	cr.Status.SetConditions(runtimev1alpha1.Deleting())
 
 	input := resourcerecordset.GenerateChangeResourceRecordSetsInput(&cr.Spec.ForProvider, route53.ChangeActionDelete)
-	//TODO: Create an ErrorIs function to check the error returned
-	//Currently we aren't checking the error returned
-	//This is just to satisfy the linter
-	_, _ = e.client.ChangeResourceRecordSetsRequest(input).Send(ctx)
+
+	_, err := e.client.ChangeResourceRecordSetsRequest(input).Send(ctx)
+
+	// There is no way to confirm 404 (from response) when deleting a recordset
+	// which isn't present using ChangeResourceRecordSetRequest
+	//
+	// For any 404 when deleting, error code returned is nil.
+	//So we can safely ignore this and catch any other error.
+	if err != nil {
+		return errors.Wrap(err, errDelete)
+	}
 
 	return errors.Wrap(nil, errDelete)
 }
