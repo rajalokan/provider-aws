@@ -81,7 +81,7 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 		dbsubnetgroup.SetupDBSubnetGroup,
 		dynamodb.SetupDynamoTable,
 		snstopic.SetupSNSTopic,
-		snssubscription.SetSubscription,
+		snssubscription.SetupSubscription,
 	} {
 		if err := setup(mgr, l); err != nil {
 			return err
