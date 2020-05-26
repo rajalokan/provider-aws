@@ -37,13 +37,13 @@ var (
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 )
 
-// // SNSTopic type metadata.
-// var (
-// 	SNSTopicKind             = reflect.TypeOf(SNSTopic{}).Name()
-// 	SNSTopicGroupKind        = schema.GroupKind{Group: Group, Kind: SNSTopicKind}.String()
-// 	SNSTopicKindAPIVersion   = SNSTopicKind + "." + SchemeGroupVersion.String()
-// 	SNSTopicGroupVersionKind = SchemeGroupVersion.WithKind(SNSTopicKind)
-// )
+// SNSTopic type metadata.
+var (
+	SNSTopicKind             = reflect.TypeOf(SNSTopic{}).Name()
+	SNSTopicGroupKind        = schema.GroupKind{Group: Group, Kind: SNSTopicKind}.String()
+	SNSTopicKindAPIVersion   = SNSTopicKind + "." + SchemeGroupVersion.String()
+	SNSTopicGroupVersionKind = SchemeGroupVersion.WithKind(SNSTopicKind)
+)
 
 // SNSSubscription type metadata.
 var (
@@ -54,6 +54,6 @@ var (
 )
 
 func init() {
-	// SchemeBuilder.Register(&SNSTopic{}, &SNSTopicList{})
+	SchemeBuilder.Register(&SNSTopic{}, &SNSTopicList{})
 	SchemeBuilder.Register(&SNSSubscription{}, &SNSSubscriptionList{})
 }
