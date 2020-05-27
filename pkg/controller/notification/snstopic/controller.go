@@ -5,12 +5,15 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
+	awssns "github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
@@ -29,6 +32,14 @@ const (
 	errCreateTopicClient = "cannot create SNS Topic client"
 	errGetProvider       = "cannot get provider"
 	errGetProviderSecret = "cannot get provider secret"
+
+	errUnexpectedObject = "The managed resource is not a SNSTopic resource"
+	errList             = "failed to list SNS Topics"
+	errCreate           = "failed to create the SNS Topic"
+	errDelete           = "failed to delete the SNS Topic"
+	errUpdate           = "failed to update the SNS Topic"
+
+	errNoTopics = "No listed topics"
 )
 
 // SetupSNSTopic adds a controller that reconciles SNSTopic.
@@ -91,20 +102,113 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.ExternalObservation, error) {
-	fmt.Println("In Observe")
-	return managed.ExternalObservation{}, nil
+	fmt.Println("\n\n\nIn Observe")
+	cr, ok := mgd.(*v1alpha1.SNSTopic)
+	if !ok {
+		return managed.ExternalObservation{}, errors.New(errUnexpectedObject)
+	}
+	fmt.Println("External Name : " + meta.GetExternalName(cr))
+
+	if !awsarn.IsARN(meta.GetExternalName(cr)) {
+		fmt.Println("External Name doesn't exit. Means Resource doesn't exist. Going to create flow")
+		return managed.ExternalObservation{}, nil
+	}
+
+	topic, err := snsclient.GetSNSTopic(ctx, e.client, meta.GetExternalName(cr))
+
+	if _, ok := err.(*snsclient.NotFound); ok {
+		fmt.Println("Topic not found. Going to create flow")
+		return managed.ExternalObservation{ResourceExists: false}, nil
+	}
+
+	if err != nil {
+		// Either there is err and retry. Or Resource does not exist.
+		fmt.Println("Errored during getting topic. Retry")
+		return managed.ExternalObservation{
+			ResourceExists:    false,
+			ConnectionDetails: managed.ConnectionDetails{},
+		}, errors.Wrap(err, errList)
+	}
+
+	fmt.Println("Topic is present")
+	fmt.Println(topic)
+
+	cr.SetConditions(runtimev1alpha1.Available())
+
+	// cr.Status.AtProvider = v1alpha1.SNSTopicObservation{
+	// 	Arn: aws.String(*topic.TopicArn),
+	// }
+
+	// update, err := snsclient.IsTopicUpToDate(cr.Spec.ForProvider, *versionRsp.PolicyVersion)
+	// if err != nil {
+	// 	return managed.ExternalObservation{}, errors.Wrap(err, errUpToDate)
+	// }
+	topicArn := meta.GetExternalName(cr)
+	resp, err := e.client.GetTopicAttributesRequest(&awssns.GetTopicAttributesInput{
+		TopicArn: aws.String(topicArn),
+	}).Send(ctx)
+
+	fmt.Println("Attributes are")
+	fmt.Println(resp.Attributes)
+
+	upToDate, err := snsclient.IsSNSTopicUpToDate(cr.Spec.ForProvider, resp.Attributes)
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errDelete)
+	}
+	fmt.Println(upToDate)
+
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: upToDate,
+	}, nil
+
 }
 
 func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.ExternalCreation, error) {
-	return managed.ExternalCreation{}, nil
+	fmt.Println("In Create")
+	cr, ok := mgd.(*v1alpha1.SNSTopic)
+	if !ok {
+		return managed.ExternalCreation{}, errors.New(errUnexpectedObject)
+	}
+
+	cr.Status.SetConditions(runtimev1alpha1.Creating())
+
+	input := snsclient.GenerateCreateTopicInput(&cr.Spec.ForProvider)
+	resp, err := e.client.CreateTopicRequest(input).Send(ctx)
+
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errCreate)
+	}
+
+	meta.SetExternalName(cr, aws.StringValue(resp.CreateTopicOutput.TopicArn))
+	if err := e.kube.Update(ctx, cr); err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, "Failure during kube update")
+	}
+
+	cr.Status.AtProvider.Arn = resp.CreateTopicOutput.TopicArn
+
+	return managed.ExternalCreation{}, errors.Wrap(nil, errCreate)
 }
 
 func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.ExternalUpdate, error) {
 	fmt.Println("In Update")
-	return managed.ExternalUpdate{}, nil
+	_, ok := mgd.(*v1alpha1.SNSTopic)
+	if !ok {
+		return managed.ExternalUpdate{}, errors.New(errUnexpectedObject)
+	}
+	// Update Topic
+	return managed.ExternalUpdate{}, errors.Wrap(nil, errUpdate)
 }
 
 func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
 	fmt.Println("In Delete")
-	return nil
+
+	cr, ok := mgd.(*v1alpha1.SNSTopic)
+	if !ok {
+		return errors.New(errUnexpectedObject)
+	}
+	_, err := e.client.DeleteTopicRequest(&awssns.DeleteTopicInput{
+		TopicArn: aws.String(meta.GetExternalName(cr)),
+	}).Send(ctx)
+	return errors.Wrap(err, errDelete)
 }

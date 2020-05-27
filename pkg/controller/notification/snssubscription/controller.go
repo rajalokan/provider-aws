@@ -5,12 +5,15 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
+	awssns "github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
@@ -29,6 +32,12 @@ const (
 	errCreateSubscriptionClient = "cannot create SNS Subscription client"
 	errGetProvider              = "cannot get provider"
 	errGetProviderSecret        = "cannot get provider secret"
+
+	errUnexpectedObject = "The managed resource is not a SNSSubscription resource"
+	errList             = "failed to list SNS Subscription"
+	errCreate           = "failed to create the SNS Subscription"
+	errDelete           = "failed to delete the SNS Subscription"
+	errUpdate           = "failed to update the SNS Subscription"
 )
 
 // SetupSubscription adds a controller than reconciles SNSSubscription
@@ -92,19 +101,72 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.ExternalObservation, error) {
-	return managed.ExternalObservation{}, nil
+	fmt.Println("In Observe")
+	cr, ok := mgd.(*v1alpha1.SNSSubscription)
+	if !ok {
+		return managed.ExternalObservation{}, errors.New(errUnexpectedObject)
+	}
+
+	if !awsarn.IsARN(meta.GetExternalName(cr)) {
+		return managed.ExternalObservation{}, nil
+	}
+
+	resp, err := e.client.ConfirmSubscriptionRequest(&awssns.ConfirmSubscriptionInput{}).Send(ctx)
+	if err != nil {
+		return managed.ExternalObservation{}, errors.New(errList)
+	}
+
+	if resp.SubscriptionArn == nil {
+		return managed.ExternalObservation{}, errors.New(errList)
+	}
+	cr.SetConditions(runtimev1alpha1.Available())
+
+	cr.Status.AtProvider = v1alpha1.SNSSubscriptionObservation{
+		Arn: aws.String(*resp.SubscriptionArn),
+	}
+
+	update := true
+
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: update,
+	}, nil
 }
 
 func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.ExternalCreation, error) {
-	return managed.ExternalCreation{}, nil
+	fmt.Println("In Create")
+	cr, ok := mgd.(*v1alpha1.SNSSubscription)
+	if !ok {
+		return managed.ExternalCreation{}, errors.New(errUnexpectedObject)
+	}
+	cr.Status.SetConditions(runtimev1alpha1.Creating())
+
+	createResp, err := e.client.SubscribeRequest(&awssns.SubscribeInput{}).Send(ctx)
+
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errCreate)
+	}
+
+	meta.SetExternalName(cr, aws.StringValue(createResp.SubscriptionArn))
+	return managed.ExternalCreation{}, errors.Wrap(e.kube.Update(ctx, cr), errCreate)
 }
 
 func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.ExternalUpdate, error) {
 	fmt.Println("In Update")
-	return managed.ExternalUpdate{}, nil
+	_, ok := mgd.(*v1alpha1.SNSSubscription)
+	if !ok {
+		return managed.ExternalUpdate{}, errors.New(errUnexpectedObject)
+	}
+	// Update Subscription
+	return managed.ExternalUpdate{}, errors.Wrap(nil, errUpdate)
 }
 
 func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
 	fmt.Println("In Delete")
-	return nil
+	_, ok := mgd.(*v1alpha1.SNSSubscription)
+	if !ok {
+		return errors.New(errUnexpectedObject)
+	}
+	_, err := e.client.UnsubscribeRequest(&awssns.UnsubscribeInput{}).Send(ctx)
+	return errors.Wrap(err, errDelete)
 }
