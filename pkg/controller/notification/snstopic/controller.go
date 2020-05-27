@@ -3,6 +3,7 @@ package snstopic
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -28,6 +29,8 @@ import (
 
 const (
 	errNotSNSTopic = "managed resource is not an SNSTopic custom resource"
+
+	errKubeUpdateFailed = "cannot update SNSTopic custom resource"
 
 	errCreateTopicClient = "cannot create SNS Topic client"
 	errGetProvider       = "cannot get provider"
@@ -158,12 +161,13 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 	fmt.Println(resp)
 	// fmt.Println(resp.Attributes)
 
+	current := cr.Spec.ForProvider.DeepCopy()
 	snsclient.LateInitializeTopic(&cr.Spec.ForProvider, topic, resp.Attributes)
-	// if !reflect.DeepEqual(current, &cr.Spec.ForProvider) {
-	// 	if err := e.kube.Update(ctx, cr); err != nil {
-	// 		return managed.ExternalObservation{}, errors.Wrap(err, errKubeUpdateFailed)
-	// 	}
-	// }
+	if !reflect.DeepEqual(current, &cr.Spec.ForProvider) {
+		if err := e.kube.Update(ctx, cr); err != nil {
+			return managed.ExternalObservation{}, errors.Wrap(err, errKubeUpdateFailed)
+		}
+	}
 	// cr.Status.AtProvider = rds.GenerateObservation(instance)
 
 	upToDate, err := snsclient.IsSNSTopicUpToDate(cr.Spec.ForProvider, resp.Attributes)
@@ -210,11 +214,36 @@ func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.Ex
 
 func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.ExternalUpdate, error) {
 	fmt.Println("\n\n\nIn Update")
-	_, ok := mgd.(*v1alpha1.SNSTopic)
+	cr, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errUnexpectedObject)
 	}
-	// Update Topic
+
+	// Fetch Topic Attributes again
+	resp, err := e.client.GetTopicAttributesRequest(&awssns.GetTopicAttributesInput{
+		TopicArn: aws.String(meta.GetExternalName(cr)),
+	}).Send(ctx)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errUpdate)
+	}
+
+	// Update Topic Attributes
+	attrs := snsclient.GetChangedAttributes(cr.Spec.ForProvider, resp.Attributes)
+	fmt.Println("Changed attrs are ", attrs)
+	for k, v := range attrs {
+		_, err := e.client.SetTopicAttributesRequest(&awssns.SetTopicAttributesInput{
+			AttributeName:  aws.String(k),
+			AttributeValue: aws.String(v),
+			TopicArn:       aws.String(meta.GetExternalName(cr)),
+		}).Send(ctx)
+		if err != nil {
+			return managed.ExternalUpdate{}, errors.Wrap(err, errUpdate)
+		}
+	}
+	fmt.Println("")
+	fmt.Println("")
+	fmt.Println("")
+
 	return managed.ExternalUpdate{}, errors.Wrap(nil, errUpdate)
 }
 

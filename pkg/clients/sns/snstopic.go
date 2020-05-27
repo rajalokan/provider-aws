@@ -30,6 +30,7 @@ type TopicClient interface {
 	ListTopicsRequest(*sns.ListTopicsInput) sns.ListTopicsRequest
 	DeleteTopicRequest(*sns.DeleteTopicInput) sns.DeleteTopicRequest
 	GetTopicAttributesRequest(*sns.GetTopicAttributesInput) sns.GetTopicAttributesRequest
+	SetTopicAttributesRequest(*sns.SetTopicAttributesInput) sns.SetTopicAttributesRequest
 }
 
 // NewTopicClient returns a new client using AWS credentials as JSON encoded data.
@@ -58,9 +59,22 @@ func GetSNSTopic(ctx context.Context, c TopicClient, topicArn string) (sns.Topic
 
 // GenerateCreateTopicInput prepares input for CreateTopicRequest
 func GenerateCreateTopicInput(p *v1alpha1.SNSTopicParameters) *sns.CreateTopicInput {
-	return &sns.CreateTopicInput{
-		Name: p.Name,
+	input := &sns.CreateTopicInput{
+		Name:       p.Name,
+		Attributes: getTopicAttributes(*p),
 	}
+
+	if len(p.Tags) != 0 {
+		input.Tags = make([]sns.Tag, len(p.Tags))
+		for i, val := range p.Tags {
+			input.Tags[i] = sns.Tag{
+				Key:   aws.String(val.Key),
+				Value: aws.String(val.Value),
+			}
+		}
+	}
+
+	return input
 }
 
 // LateInitializeTopic fills the empty fields in *v1alpha1.SNSTopicParameters with the
@@ -72,6 +86,26 @@ func LateInitializeTopic(in *v1alpha1.SNSTopicParameters, topic sns.Topic, attrs
 
 func setTopicAttributes(in *v1alpha1.SNSTopicParameters, attrs map[string]string) {
 	in.DisplayName = awsclients.LateInitializeStringPtr(in.DisplayName, aws.String(attrs["DisplayName"]))
+}
+
+// GetChangedAttributes will set the changed attributes for a topic in AWS side.
+//
+// Currently AWS SDK allows to set Attribute Topics one at a time.
+// Please see https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
+// So we need to compare each topic attribute and call SetTopicAttribute for ones which has
+// changed.
+func GetChangedAttributes(p v1alpha1.SNSTopicParameters, attrs map[string]string) map[string]string {
+	topicAttrs := getTopicAttributes(p)
+	correctAttrs := getCorrectAttributes(attrs)
+	changedAttrs := make(map[string]string)
+	for k, v := range topicAttrs {
+		if v != correctAttrs[k] {
+			fmt.Println("Updating key - ", k)
+			changedAttrs[k] = v
+		}
+	}
+
+	return changedAttrs
 }
 
 // func createPatch(in *sns.Topic, target *v1alpha1.SNSTopicParameters) (*v1alpha1.SNSTopicParameters, error) {
