@@ -111,6 +111,9 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 
 	if !awsarn.IsARN(meta.GetExternalName(cr)) {
 		fmt.Println("External Name doesn't exit. Means Resource doesn't exist. Going to create flow")
+		fmt.Println("")
+		fmt.Println("")
+		fmt.Println("")
 		return managed.ExternalObservation{}, nil
 	}
 
@@ -118,6 +121,9 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 
 	if _, ok := err.(*snsclient.NotFound); ok {
 		fmt.Println("Topic not found. Going to create flow")
+		fmt.Println("")
+		fmt.Println("")
+		fmt.Println("")
 		return managed.ExternalObservation{ResourceExists: false}, nil
 	}
 
@@ -149,13 +155,25 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 	}).Send(ctx)
 
 	fmt.Println("Attributes are")
-	fmt.Println(resp.Attributes)
+	fmt.Println(resp)
+	// fmt.Println(resp.Attributes)
+
+	snsclient.LateInitializeTopic(&cr.Spec.ForProvider, topic, resp.Attributes)
+	// if !reflect.DeepEqual(current, &cr.Spec.ForProvider) {
+	// 	if err := e.kube.Update(ctx, cr); err != nil {
+	// 		return managed.ExternalObservation{}, errors.Wrap(err, errKubeUpdateFailed)
+	// 	}
+	// }
+	// cr.Status.AtProvider = rds.GenerateObservation(instance)
 
 	upToDate, err := snsclient.IsSNSTopicUpToDate(cr.Spec.ForProvider, resp.Attributes)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errDelete)
 	}
 	fmt.Println(upToDate)
+	fmt.Println("")
+	fmt.Println("")
+	fmt.Println("")
 
 	return managed.ExternalObservation{
 		ResourceExists:   true,
@@ -165,7 +183,7 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 }
 
 func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.ExternalCreation, error) {
-	fmt.Println("In Create")
+	fmt.Println("\n\n\nIn Create")
 	cr, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errUnexpectedObject)
@@ -191,7 +209,7 @@ func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.Ex
 }
 
 func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.ExternalUpdate, error) {
-	fmt.Println("In Update")
+	fmt.Println("\n\n\nIn Update")
 	_, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errUnexpectedObject)
@@ -201,14 +219,18 @@ func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.Ex
 }
 
 func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
-	fmt.Println("In Delete")
+	fmt.Println("\n\n\nIn Delete")
 
 	cr, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
 		return errors.New(errUnexpectedObject)
 	}
+
+	cr.Status.SetConditions(runtimev1alpha1.Deleting())
+
 	_, err := e.client.DeleteTopicRequest(&awssns.DeleteTopicInput{
 		TopicArn: aws.String(meta.GetExternalName(cr)),
 	}).Send(ctx)
+
 	return errors.Wrap(err, errDelete)
 }

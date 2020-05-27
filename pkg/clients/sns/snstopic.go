@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/crossplane/provider-aws/apis/notification/v1alpha1"
 	awsclients "github.com/crossplane/provider-aws/pkg/clients"
@@ -52,7 +53,7 @@ func GetSNSTopic(ctx context.Context, c TopicClient, topicArn string) (sns.Topic
 			return topic, nil
 		}
 	}
-	return sns.Topic{}, nil
+	return sns.Topic{}, &NotFound{}
 }
 
 // GenerateCreateTopicInput prepares input for CreateTopicRequest
@@ -62,20 +63,40 @@ func GenerateCreateTopicInput(p *v1alpha1.SNSTopicParameters) *sns.CreateTopicIn
 	}
 }
 
-// // LateInitializeTopic fills the empty fields in *v1alpha1.SNSTopicParameters with the
-// // values seen in sns.Topic.
-// func LateInitializeTopic(in *v1alpha1.SNSTopicParameters, topic sns.Topic) {
-// 	in.Name = awsclients.LateInitializeStringPtr(in.Name, topic.TopicArn)
-// 	topic.GetTopicAttribute
-// }
+// LateInitializeTopic fills the empty fields in *v1alpha1.SNSTopicParameters with the
+// values seen in sns.Topic.
+func LateInitializeTopic(in *v1alpha1.SNSTopicParameters, topic sns.Topic, attrs map[string]string) {
+	in.Name = awsclients.LateInitializeStringPtr(in.Name, topic.TopicArn)
+	setTopicAttributes(in, attrs)
+}
+
+func setTopicAttributes(in *v1alpha1.SNSTopicParameters, attrs map[string]string) {
+	in.DisplayName = awsclients.LateInitializeStringPtr(in.DisplayName, aws.String(attrs["DisplayName"]))
+}
 
 // func createPatch(in *sns.Topic, target *v1alpha1.SNSTopicParameters) (*v1alpha1.SNSTopicParameters, error) {
 // 	currentParams := &v1alpha1.SNSTopicParameters{}
 // 	LateInitalizeTopic(currentParams, in)
 // }
 
+func getTopicAttributes(p v1alpha1.SNSTopicParameters) map[string]string {
+	attr := make(map[string]string)
+	attr["DisplayName"] = aws.StringValue(p.DisplayName)
+
+	return attr
+}
+
+func getCorrectAttributes(attr map[string]string) map[string]string {
+	newAttr := make(map[string]string)
+	newAttr["DisplayName"] = attr["DisplayName"]
+
+	return newAttr
+}
+
 // IsSNSTopicUpToDate checks if object is up to date
 func IsSNSTopicUpToDate(p v1alpha1.SNSTopicParameters, attr map[string]string) (bool, error) {
 	fmt.Println("IsSNSTopicUpToDate")
-	return true, nil
+	pAttrs := getTopicAttributes(p)
+	isUpToDate := cmp.Equal(pAttrs, getCorrectAttributes(attr))
+	return isUpToDate, nil
 }
