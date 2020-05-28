@@ -38,6 +38,9 @@ const (
 	errCreate           = "failed to create the SNS Subscription"
 	errDelete           = "failed to delete the SNS Subscription"
 	errUpdate           = "failed to update the SNS Subscription"
+
+	pendingConfirmation    = "pending confirmation"
+	pendingConfirmationArn = "PendingConfirmation"
 )
 
 // SetupSubscription adds a controller than reconciles SNSSubscription
@@ -62,7 +65,6 @@ type connector struct {
 }
 
 func (c *connector) Connect(ctx context.Context, mgd resource.Managed) (managed.ExternalClient, error) {
-	fmt.Println("Connect")
 	cr, ok := mgd.(*v1alpha1.SNSSubscription)
 	if !ok {
 		return nil, errors.New(errNotSNSSubscription)
@@ -101,58 +103,87 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.ExternalObservation, error) {
-	fmt.Println("In Observe")
+	fmt.Println("\n\n\nIn Observe -- subscription")
 	cr, ok := mgd.(*v1alpha1.SNSSubscription)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errUnexpectedObject)
 	}
 
-	if !awsarn.IsARN(meta.GetExternalName(cr)) {
-		return managed.ExternalObservation{}, nil
+	fmt.Println("External Name : " + meta.GetExternalName(cr))
+
+	externalName := meta.GetExternalName(cr)
+
+	sub, err := snsclient.GetSNSSubscription(ctx, e.client, cr)
+	if _, ok := err.(*snsclient.SubscriptionNotFound); ok {
+		fmt.Println("Subscription not found.")
+		fmt.Println("")
+		fmt.Println("")
+		fmt.Println("")
+		return managed.ExternalObservation{ResourceExists: false}, nil
 	}
 
-	resp, err := e.client.ConfirmSubscriptionRequest(&awssns.ConfirmSubscriptionInput{}).Send(ctx)
-	if err != nil {
-		return managed.ExternalObservation{}, errors.New(errList)
+	if aws.StringValue(sub.SubscriptionArn) == pendingConfirmationArn {
+		fmt.Println("Subscription in pending confirmation. Skipping it.")
+		fmt.Println("")
+		fmt.Println("")
+		fmt.Println("")
+		return managed.ExternalObservation{
+			ResourceExists: true,
+		}, nil
 	}
 
-	if resp.SubscriptionArn == nil {
-		return managed.ExternalObservation{}, errors.New(errList)
+	if awsarn.IsARN(*sub.SubscriptionArn) && !awsarn.IsARN(externalName) {
+		meta.SetExternalName(cr, aws.StringValue(sub.SubscriptionArn))
+		if err := e.kube.Update(ctx, cr); err != nil {
+			return managed.ExternalObservation{}, errors.Wrap(err, "Failure during kube update")
+		}
 	}
+
 	cr.SetConditions(runtimev1alpha1.Available())
 
-	cr.Status.AtProvider = v1alpha1.SNSSubscriptionObservation{
-		Arn: aws.String(*resp.SubscriptionArn),
-	}
+	res, err := e.client.GetSubscriptionAttributesRequest(&awssns.GetSubscriptionAttributesInput{
+		SubscriptionArn: aws.String(*sub.SubscriptionArn),
+	}).Send(ctx)
+	fmt.Println("Attributes are")
+	fmt.Println(res)
 
-	update := true
+	upToDate, err := snsclient.IsSNSSubscriptionUpToDate(cr.Spec.ForProvider, res.Attributes)
 
 	return managed.ExternalObservation{
 		ResourceExists:   true,
-		ResourceUpToDate: update,
+		ResourceUpToDate: upToDate,
 	}, nil
 }
 
 func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.ExternalCreation, error) {
-	fmt.Println("In Create")
+	fmt.Println("\n\n\nIn Create - Subscription")
+
 	cr, ok := mgd.(*v1alpha1.SNSSubscription)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errUnexpectedObject)
 	}
+
 	cr.Status.SetConditions(runtimev1alpha1.Creating())
 
-	createResp, err := e.client.SubscribeRequest(&awssns.SubscribeInput{}).Send(ctx)
+	input := snsclient.GenerateSubscribeInput(&cr.Spec.ForProvider)
+	res, err := e.client.SubscribeRequest(input).Send(ctx)
 
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errCreate)
 	}
 
-	meta.SetExternalName(cr, aws.StringValue(createResp.SubscriptionArn))
-	return managed.ExternalCreation{}, errors.Wrap(e.kube.Update(ctx, cr), errCreate)
+	meta.SetExternalName(cr, aws.StringValue(res.SubscribeOutput.SubscriptionArn))
+	if err := e.kube.Update(ctx, cr); err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, "Failure during kube update")
+	}
+
+	cr.Status.AtProvider.Arn = res.SubscribeOutput.SubscriptionArn
+
+	return managed.ExternalCreation{}, errors.Wrap(nil, errCreate)
 }
 
 func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.ExternalUpdate, error) {
-	fmt.Println("In Update")
+	fmt.Println("\n\n\nIn Update - Subscription")
 	_, ok := mgd.(*v1alpha1.SNSSubscription)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errUnexpectedObject)
@@ -162,11 +193,14 @@ func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.Ex
 }
 
 func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
-	fmt.Println("In Delete")
-	_, ok := mgd.(*v1alpha1.SNSSubscription)
+	fmt.Println("\n\n\nIn Delete - subscription")
+	cr, ok := mgd.(*v1alpha1.SNSSubscription)
 	if !ok {
 		return errors.New(errUnexpectedObject)
 	}
-	_, err := e.client.UnsubscribeRequest(&awssns.UnsubscribeInput{}).Send(ctx)
+	_, err := e.client.UnsubscribeRequest(&awssns.UnsubscribeInput{
+		SubscriptionArn: aws.String(meta.GetExternalName(cr)),
+	}).Send(ctx)
+
 	return errors.Wrap(err, errDelete)
 }

@@ -134,23 +134,42 @@ spec:
               description: SNSSubscriptionParameters define the desired state of a
                 AWS SNS Topic
               properties:
+                endpoint:
+                  type: string
                 protocol:
                   description: The subscription's protocol.
                   type: string
                 topicArn:
+                  description: TopicArn is the Arn of the SNS Topic
                   type: string
-                topicID:
-                  type: string
-                topicIDRef:
-                  type: string
-                topicIDSelector:
-                  type: string
+                topicArnRef:
+                  description: TopicArnRef references a SNS Topic and retrieves its
+                    TopicArn
+                  properties:
+                    name:
+                      description: Name of the referenced object.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                topicArnSelector:
+                  description: TopicArnSelector selects a reference to a SNS Topic
+                    and retrieves its TopicArn
+                  properties:
+                    matchControllerRef:
+                      description: MatchControllerRef ensures an object with the same
+                        controller reference as the selecting object is selected.
+                      type: boolean
+                    matchLabels:
+                      additionalProperties:
+                        type: string
+                      description: MatchLabels ensures an object with matching labels
+                        is selected.
+                      type: object
+                  type: object
               required:
+              - endpoint
               - protocol
-              - topicArn
-              - topicID
-              - topicIDRef
-              - topicIDSelector
               type: object
             providerRef:
               description: ProviderReference specifies the provider that will be used

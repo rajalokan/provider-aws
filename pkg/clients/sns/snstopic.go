@@ -17,10 +17,10 @@ const (
 	SNSTopicNotFound = "InvalidSNSTopic.NotFound"
 )
 
-// NotFound will be raised when there is no SNSTopic
-type NotFound struct{}
+// TopicNotFound will be raised when there is no SNSTopic
+type TopicNotFound struct{}
 
-func (err *NotFound) Error() string {
+func (err *TopicNotFound) Error() string {
 	return fmt.Sprint(SNSTopicNotFound)
 }
 
@@ -54,7 +54,7 @@ func GetSNSTopic(ctx context.Context, c TopicClient, topicArn string) (sns.Topic
 			return topic, nil
 		}
 	}
-	return sns.Topic{}, &NotFound{}
+	return sns.Topic{}, &TopicNotFound{}
 }
 
 // GenerateCreateTopicInput prepares input for CreateTopicRequest
@@ -129,7 +129,6 @@ func getCorrectAttributes(attr map[string]string) map[string]string {
 
 // IsSNSTopicUpToDate checks if object is up to date
 func IsSNSTopicUpToDate(p v1alpha1.SNSTopicParameters, attr map[string]string) (bool, error) {
-	fmt.Println("IsSNSTopicUpToDate")
 	pAttrs := getTopicAttributes(p)
 	isUpToDate := cmp.Equal(pAttrs, getCorrectAttributes(attr))
 	return isUpToDate, nil

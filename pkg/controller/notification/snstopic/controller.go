@@ -38,11 +38,13 @@ const (
 
 	errUnexpectedObject = "The managed resource is not a SNSTopic resource"
 	errList             = "failed to list SNS Topics"
+	errGetTopic         = "failed to get SNS Topic"
+	errGetTopicAttr     = "failed to get SNS Topic Attribute"
 	errCreate           = "failed to create the SNS Topic"
 	errDelete           = "failed to delete the SNS Topic"
 	errUpdate           = "failed to update the SNS Topic"
-
-	errNoTopics = "No listed topics"
+	errUpToDateFailed   = "cannot check whether object is up-to-date"
+	errNoTopics         = "No listed topics"
 )
 
 // SetupSNSTopic adds a controller that reconciles SNSTopic.
@@ -105,7 +107,7 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.ExternalObservation, error) {
-	fmt.Println("\n\n\nIn Observe")
+	fmt.Println("\n\n\nIn Observe - Topic")
 	cr, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errUnexpectedObject)
@@ -113,7 +115,7 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 	fmt.Println("External Name : " + meta.GetExternalName(cr))
 
 	if !awsarn.IsARN(meta.GetExternalName(cr)) {
-		fmt.Println("External Name doesn't exit. Means Resource doesn't exist. Going to create flow")
+		fmt.Println("External Name isn't ARN. Means topic doesn't exist. Creating it.")
 		fmt.Println("")
 		fmt.Println("")
 		fmt.Println("")
@@ -122,8 +124,8 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 
 	topic, err := snsclient.GetSNSTopic(ctx, e.client, meta.GetExternalName(cr))
 
-	if _, ok := err.(*snsclient.NotFound); ok {
-		fmt.Println("Topic not found. Going to create flow")
+	if _, ok := err.(*snsclient.TopicNotFound); ok {
+		fmt.Println("Topic not found. It has been deleted.")
 		fmt.Println("")
 		fmt.Println("")
 		fmt.Println("")
@@ -136,45 +138,37 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 		return managed.ExternalObservation{
 			ResourceExists:    false,
 			ConnectionDetails: managed.ConnectionDetails{},
-		}, errors.Wrap(err, errList)
+		}, errors.Wrap(err, errGetTopic)
 	}
 
-	fmt.Println("Topic is present")
-	fmt.Println(topic)
+	fmt.Println("Topic already exists")
 
-	cr.SetConditions(runtimev1alpha1.Available())
-
-	// cr.Status.AtProvider = v1alpha1.SNSTopicObservation{
-	// 	Arn: aws.String(*topic.TopicArn),
-	// }
-
-	// update, err := snsclient.IsTopicUpToDate(cr.Spec.ForProvider, *versionRsp.PolicyVersion)
-	// if err != nil {
-	// 	return managed.ExternalObservation{}, errors.Wrap(err, errUpToDate)
-	// }
 	topicArn := meta.GetExternalName(cr)
-	resp, err := e.client.GetTopicAttributesRequest(&awssns.GetTopicAttributesInput{
+	res, err := e.client.GetTopicAttributesRequest(&awssns.GetTopicAttributesInput{
 		TopicArn: aws.String(topicArn),
 	}).Send(ctx)
 
-	fmt.Println("Attributes are")
-	fmt.Println(resp)
-	// fmt.Println(resp.Attributes)
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errGetTopicAttr)
+	}
 
 	current := cr.Spec.ForProvider.DeepCopy()
-	snsclient.LateInitializeTopic(&cr.Spec.ForProvider, topic, resp.Attributes)
+	snsclient.LateInitializeTopic(&cr.Spec.ForProvider, topic, res.Attributes)
 	if !reflect.DeepEqual(current, &cr.Spec.ForProvider) {
 		if err := e.kube.Update(ctx, cr); err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, errKubeUpdateFailed)
 		}
 	}
-	// cr.Status.AtProvider = rds.GenerateObservation(instance)
 
-	upToDate, err := snsclient.IsSNSTopicUpToDate(cr.Spec.ForProvider, resp.Attributes)
+	cr.SetConditions(runtimev1alpha1.Available())
+
+	// GenerateObservation
+
+	upToDate, err := snsclient.IsSNSTopicUpToDate(cr.Spec.ForProvider, res.Attributes)
 	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errDelete)
+		return managed.ExternalObservation{}, errors.Wrap(err, errUpToDateFailed)
 	}
-	fmt.Println(upToDate)
+	fmt.Println("Is Topic Up to Date : ", upToDate)
 	fmt.Println("")
 	fmt.Println("")
 	fmt.Println("")
@@ -183,11 +177,11 @@ func (e *external) Observe(ctx context.Context, mgd resource.Managed) (managed.E
 		ResourceExists:   true,
 		ResourceUpToDate: upToDate,
 	}, nil
-
 }
 
 func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.ExternalCreation, error) {
-	fmt.Println("\n\n\nIn Create")
+	fmt.Println("\n\n\nIn Create - Topic")
+
 	cr, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errUnexpectedObject)
@@ -209,11 +203,16 @@ func (e *external) Create(ctx context.Context, mgd resource.Managed) (managed.Ex
 
 	cr.Status.AtProvider.Arn = resp.CreateTopicOutput.TopicArn
 
+	fmt.Println("Topic Created successfully")
+	fmt.Println("")
+	fmt.Println("")
+	fmt.Println("")
+
 	return managed.ExternalCreation{}, errors.Wrap(nil, errCreate)
 }
 
 func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.ExternalUpdate, error) {
-	fmt.Println("\n\n\nIn Update")
+	fmt.Println("\n\n\nIn Update - Topic")
 	cr, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errUnexpectedObject)
@@ -240,15 +239,17 @@ func (e *external) Update(ctx context.Context, mgd resource.Managed) (managed.Ex
 			return managed.ExternalUpdate{}, errors.Wrap(err, errUpdate)
 		}
 	}
+	fmt.Println("Topic Successfully updated.")
 	fmt.Println("")
 	fmt.Println("")
 	fmt.Println("")
+	return managed.ExternalUpdate{}, errors.Wrap(errors.New("Something went wrong"), errUpdate)
 
-	return managed.ExternalUpdate{}, errors.Wrap(nil, errUpdate)
+	// return managed.ExternalUpdate{}, errors.Wrap(nil, errUpdate)
 }
 
 func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
-	fmt.Println("\n\n\nIn Delete")
+	fmt.Println("\n\n\nIn Delete - Topic")
 
 	cr, ok := mgd.(*v1alpha1.SNSTopic)
 	if !ok {
@@ -260,6 +261,10 @@ func (e *external) Delete(ctx context.Context, mgd resource.Managed) error {
 	_, err := e.client.DeleteTopicRequest(&awssns.DeleteTopicInput{
 		TopicArn: aws.String(meta.GetExternalName(cr)),
 	}).Send(ctx)
+	fmt.Println("Topic Deleted")
+	fmt.Println("")
+	fmt.Println("")
+	fmt.Println("")
 
 	return errors.Wrap(err, errDelete)
 }

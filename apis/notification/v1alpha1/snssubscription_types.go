@@ -38,13 +38,21 @@ type SNSSubscriptionSpec struct {
 
 // SNSSubscriptionParameters define the desired state of a AWS SNS Topic
 type SNSSubscriptionParameters struct {
-	TopicArn        *string `json:"topicArn"`
-	TopicID         *string `json:"topicID"`
-	TopicIDRef      *string `json:"topicIDRef"`
-	TopicIDSelector *string `json:"topicIDSelector"`
+
+	// TopicArn is the Arn of the SNS Topic
+	TopicArn string `json:"topicArn,omitempty"`
+
+	// TopicArnRef references a SNS Topic and retrieves its TopicArn
+	TopicArnRef *runtimev1alpha1.Reference `json:"topicArnRef,omitempty"`
+
+	// TopicArnSelector selects a reference to a SNS Topic and retrieves
+	// its TopicArn
+	TopicArnSelector *runtimev1alpha1.Selector `json:"topicArnSelector,omitempty"`
 
 	// The subscription's protocol.
 	Protocol *string `json:"protocol"`
+
+	Endpoint *string `json:"endpoint"`
 }
 
 // SNSSubscriptionObservation represents the observed state of a AWS SNS Topic

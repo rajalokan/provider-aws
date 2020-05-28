@@ -15,6 +15,15 @@ spec:
   - JSONPath: .status.conditions[?(@.type=='Synced')].status
     name: SYNCED
     type: string
+  - JSONPath: .spec.forProvider.name
+    name: TOPICNAME
+    type: string
+  - JSONPath: .spec.forProvider.displayName
+    name: DISPLAY NAME
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: AGE
+    type: date
   group: notification.aws.crossplane.io
   names:
     categories:
